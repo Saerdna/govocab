@@ -6,27 +6,40 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-var (
+type VocabDict struct{
 	Dict map[string]int32
-)
-
+	Lock sync.Mutex
+	rank int32
+}
 const (
 	DictLength = 2
+	SepField = " "
 )
 
-func LoadDict(path string) (err error) {
+func NewVocabDict()(*VocabDict){
+	return &VocabDict{
+		Dict:make(map[string]int32),
+		Lock:sync.Mutex{},
+		rank:0,
+	}
+}
+
+func (s *VocabDict) LoadDict(path string) (err error) {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0644)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+	
 	scanner := bufio.NewScanner(file)
 	newDict := make(map[string]int32)
+	var newRank int32 = 0
 	for scanner.Scan() {
 		line := scanner.Text()
-		text := strings.Split(line, "\t")
+		text := strings.Split(line, SepField)
 		if len(text) != DictLength {
 			continue
 		}
@@ -34,43 +47,52 @@ func LoadDict(path string) (err error) {
 		if err != nil {
 			continue
 		}
-		newDict[text[0]] = rank
+		newDict[text[0]] = int32(rank)
+		if newRank < int32(rank){
+			newRank = int32(rank)
+		}
 	}
-	Dict = newDict
+	s.Lock.Lock()
+	s.Dict = newDict
+	s.rank = newRank
+	s.Lock.Unlock()
+	return nil
 }
 
-func Fit(wordList []string) {
-	var idx int32 = 1
-	for _, word := range wordList {
-		for _, vocab := range strings.Split(word, " ") {
-			if _, ok := Dict[vocab]; !ok {
-				Dict[vocab] = idx
-				idx += 1
-			}
+func (s *VocabDict)Fit(words string) {
+	s.Lock.Lock()
+	defer s.Lock.Unlock()
+	for _, word := range words {
+		if string(word) == SepField{
+			continue
+		}
+		if _, ok := s.Dict[string(word)]; !ok {
+			s.rank += 1
+			s.Dict[string(word)] = s.rank
 		}
 	}
 }
 
-func transform(wordList []string) [][]int32 {
-	result := make([][]int32, 0)
-	for _, word := range wordList {
-		one := make([]int32, 0)
-		for _, vocab := range strings.Split(word, " ") {
-			one = append(one, Dict[vocab])
-		}
-		result = append(result, one)
+func (s *VocabDict) Transform(words string) []int32 {
+	s.Lock.Lock()
+	defer s.Lock.Unlock()
+	result := make([]int32, 0)
+	for _, word := range words {
+		result = append(result, s.Dict[string(word)])
 	}
 	return result
 }
-func Save(path string) (err error) {
-	file, err := os.OpenFile(path, os.O_WRONLY, 0644)
+func (s *VocabDict) Save(path string) (err error) {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
-	for k, v := range Dict {
-		writer.WriteString(fmt.Sprintf("%s %d", k, v))
+	for k, v := range s.Dict {
+		writer.WriteString(fmt.Sprintf("%s%s%d\n", k, SepField,v))
 	}
+	writer.Flush()
+	return
 }
