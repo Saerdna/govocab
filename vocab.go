@@ -62,7 +62,7 @@ func (s *VocabDict) LoadDict(path string) (err error) {
 func (s *VocabDict)Fit(words string) {
 	s.Lock.Lock()
 	defer s.Lock.Unlock()
-	for _, word := range words {
+	for _, word := range []rune(words) {
 		if string(word) == SepField{
 			continue
 		}
@@ -73,12 +73,15 @@ func (s *VocabDict)Fit(words string) {
 	}
 }
 
-func (s *VocabDict) Transform(words string) []int32 {
+func (s *VocabDict) Transform(words string, max_length int32) []int32 {
 	s.Lock.Lock()
 	defer s.Lock.Unlock()
-	result := make([]int32, 0)
-	for _, word := range words {
-		result = append(result, s.Dict[string(word)])
+	result := make([]int32, max_length)
+	for idx, word := range[]rune(words) {
+		if idx >= int(max_length) {
+			return result
+		}
+		result[idx] = s.Dict[string(word)]
 	}
 	return result
 }
